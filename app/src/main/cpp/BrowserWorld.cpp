@@ -365,6 +365,23 @@ BrowserWorld::State::UpdateControllers(bool& aRelayoutWidgets) {
       continue;
     }
 
+    const bool pressed = controller.buttonState & ControllerDelegate::BUTTON_TRIGGER ||
+                         controller.buttonState & ControllerDelegate::BUTTON_TOUCHPAD;
+    const bool wasPressed = controller.lastButtonState & ControllerDelegate::BUTTON_TRIGGER ||
+                            controller.lastButtonState & ControllerDelegate::BUTTON_TOUCHPAD;
+
+    bool dragging = false;
+    bool wasDragging = false;
+    if (wasPressed) {
+      if (pressed) {
+        if (controller.widget) {
+          dragging = true;
+        }
+      } else {
+        wasDragging = true;
+      }
+    }
+
     const vrb::Vector start = controller.StartPoint();
     const vrb::Vector direction = controller.Direction();
 
@@ -373,7 +390,8 @@ BrowserWorld::State::UpdateControllers(bool& aRelayoutWidgets) {
     vrb::Vector hitPoint;
     vrb::Vector hitNormal;
 
-    for (const WidgetPtr& widget: widgets) {
+    if (dragging) {
+      WidgetPtr widget = GetWidget(controller.widget);
       if (resizingWidget && resizingWidget->IsResizingActive() && resizingWidget != widget) {
         // Don't interact with other widgets when resizing gesture is active.
         continue;
@@ -386,13 +404,35 @@ BrowserWorld::State::UpdateControllers(bool& aRelayoutWidgets) {
       vrb::Vector normal;
       float distance = 0.0f;
       bool isInWidget = false;
-      const bool clamp = !widget->IsResizing() && !movingWidget;
+      const bool clamp = !widget->IsResizing() && !movingWidget && !dragging;
       if (widget->TestControllerIntersection(start, direction, result, normal, clamp, isInWidget, distance)) {
-        if (isInWidget && (distance < hitDistance)) {
           hitWidget = widget;
-          hitDistance = distance;
           hitPoint = result;
           hitNormal = normal;
+      }
+
+    } else {
+      for (const WidgetPtr& widget: widgets) {
+        if (resizingWidget && resizingWidget->IsResizingActive() && resizingWidget != widget) {
+          // Don't interact with other widgets when resizing gesture is active.
+          continue;
+        }
+        if (movingWidget && movingWidget->GetWidget() != widget) {
+          // Don't interact with other widgets when moving gesture is active.
+          continue;
+        }
+        vrb::Vector result;
+        vrb::Vector normal;
+        float distance = 0.0f;
+        bool isInWidget = false;
+        const bool clamp = !widget->IsResizing() && !movingWidget;
+        if (widget->TestControllerIntersection(start, direction, result, normal, clamp, isInWidget, distance)) {
+          if (isInWidget && (distance < hitDistance)) {
+            hitWidget = widget;
+            hitDistance = distance;
+            hitPoint = result;
+            hitNormal = normal;
+          }
         }
       }
     }
@@ -405,7 +445,7 @@ BrowserWorld::State::UpdateControllers(bool& aRelayoutWidgets) {
     if (controller.pointer) {
       controller.pointer->SetVisible(hitWidget.get() != nullptr);
       controller.pointer->SetHitWidget(hitWidget);
-      if (hitWidget) {
+      if (hitWidget || dragging) {
         vrb::Matrix translation = vrb::Matrix::Translation(hitPoint);
         vrb::Matrix localRotation = vrb::Matrix::Rotation(hitNormal);
         vrb::Matrix reorient = device->GetReorientTransform();
@@ -413,11 +453,6 @@ BrowserWorld::State::UpdateControllers(bool& aRelayoutWidgets) {
         controller.pointer->SetScale(hitPoint, device->GetHeadTransform());
       }
     }
-
-    const bool pressed = controller.buttonState & ControllerDelegate::BUTTON_TRIGGER ||
-                         controller.buttonState & ControllerDelegate::BUTTON_TOUCHPAD;
-    const bool wasPressed = controller.lastButtonState & ControllerDelegate::BUTTON_TRIGGER ||
-                              controller.lastButtonState & ControllerDelegate::BUTTON_TOUCHPAD;
 
     if (movingWidget && movingWidget->IsMoving(controller.index)) {
       if (!pressed && wasPressed) {
@@ -498,6 +533,9 @@ BrowserWorld::State::UpdateControllers(bool& aRelayoutWidgets) {
         }
       }
     } else if (controller.widget) {
+      if (wasDragging) {
+        VRBrowser::HandleMotionEvent(controller.widget, controller.index, (jboolean) pressed, controller.lastTouchX, controller.lastTouchY);
+      }
       VRBrowser::HandleMotionEvent(0, controller.index, (jboolean) pressed, 0.0f, 0.0f);
       controller.widget = 0;
 
