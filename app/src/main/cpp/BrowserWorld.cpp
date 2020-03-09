@@ -370,6 +370,8 @@ BrowserWorld::State::UpdateControllers(bool& aRelayoutWidgets) {
     const bool wasPressed = controller.lastButtonState & ControllerDelegate::BUTTON_TRIGGER ||
                             controller.lastButtonState & ControllerDelegate::BUTTON_TOUCHPAD;
 
+    bool moving = movingWidget != nullptr;
+    bool resizing = resizingWidget && resizingWidget->IsResizingActive();
     bool dragging = false;
     bool wasDragging = false;
     if (wasPressed) {
@@ -390,21 +392,13 @@ BrowserWorld::State::UpdateControllers(bool& aRelayoutWidgets) {
     vrb::Vector hitPoint;
     vrb::Vector hitNormal;
 
-    if (dragging) {
+    if (dragging && !resizing && ! moving) {
       WidgetPtr widget = GetWidget(controller.widget);
-      if (resizingWidget && resizingWidget->IsResizingActive() && resizingWidget != widget) {
-        // Don't interact with other widgets when resizing gesture is active.
-        continue;
-      }
-      if (movingWidget && movingWidget->GetWidget() != widget) {
-        // Don't interact with other widgets when moving gesture is active.
-        continue;
-      }
       vrb::Vector result;
       vrb::Vector normal;
       float distance = 0.0f;
       bool isInWidget = false;
-      const bool clamp = !widget->IsResizing() && !movingWidget && !dragging;
+      const bool clamp = !dragging;
       if (widget->TestControllerIntersection(start, direction, result, normal, clamp, isInWidget, distance)) {
           hitWidget = widget;
           hitPoint = result;
@@ -413,11 +407,11 @@ BrowserWorld::State::UpdateControllers(bool& aRelayoutWidgets) {
 
     } else {
       for (const WidgetPtr& widget: widgets) {
-        if (resizingWidget && resizingWidget->IsResizingActive() && resizingWidget != widget) {
+        if (resizing && resizingWidget != widget) {
           // Don't interact with other widgets when resizing gesture is active.
           continue;
         }
-        if (movingWidget && movingWidget->GetWidget() != widget) {
+        if (moving && movingWidget->GetWidget() != widget) {
           // Don't interact with other widgets when moving gesture is active.
           continue;
         }
@@ -425,7 +419,7 @@ BrowserWorld::State::UpdateControllers(bool& aRelayoutWidgets) {
         vrb::Vector normal;
         float distance = 0.0f;
         bool isInWidget = false;
-        const bool clamp = !widget->IsResizing() && !movingWidget;
+        const bool clamp = !widget->IsResizing() && !moving;
         if (widget->TestControllerIntersection(start, direction, result, normal, clamp, isInWidget, distance)) {
           if (isInWidget && (distance < hitDistance)) {
             hitWidget = widget;
